@@ -112,19 +112,23 @@ clrlp2: inc     hl
         ld      (hl),a
         djnz    clrlp2
         pop     hl              ; Get back last address written.
-        ld      bc,(dbuff)
+biglp:  ld      bc,(dbuff)
         and     a
         sbc     hl,bc           ; Calculate the length.
         ld      (pbblk+$01),bc
         ld      (pbblk+$05),hl
         ld      a,$02
+        ld      hl,pbblk
         call    OSGBPB
         jr      c,bbcwre        ; Write error.
         pop     af
         jr      nz,done
         ld      bc,(maxrec)
         call    rdcpm
-        jr      bigfil
+        push    af
+        ld      h,d
+        ld      l,e
+        jr      biglp
 done:   ld      a,(pbblk)       ; Close the BBC file.
         ld      h,a
         xor     a
@@ -157,9 +161,10 @@ rdloop: push    bc
         ld      c,SETDMA        ; Set the "DMA" address, i.e. where the
         call    BDOS            ; data is to be read to.
         ld      c,FREADSQ       ; Read sequential record.
+        ld      de,FCB1
         call    BDOS
         or      a
-        ret     nz              ; End of file (probably).
+        jr      nz,cpeof        ; End of file (probably).
         pop     de
         ld      hl,$80          ; Move memory destination up by one
         add     hl,de           ; CP/M record.
@@ -171,6 +176,9 @@ rdloop: push    bc
         ld      c,b
         or      a
         jr      nz,rdloop
+        ret
+cpeof:  pop     de
+        pop     bc
         ret
 
         ;; Messages.
