@@ -104,7 +104,7 @@ obclp:  ld      (hl),a
         ld      de,(dbuff)      ; Write to CP/M
         ld      hl,(ofblk+$0A)
         call    cpmwrt
-        ld      c,FCLOSE        ; Close the output file
+clscpm: ld      c,FCLOSE        ; Close the output file
         ld      de,FCB2
         call    BDOS
         cp      $FF
@@ -145,11 +145,11 @@ gblp:   ld      hl,(dbuff)
         ld      hl,gbblk
         call    OSGBPB
         ld      hl,gbblk+$05    ; Check if we read a complete buffer full.
-        ld      b,(hl)
-        ld      a,b
-        inc     hl
         ld      c,(hl)
-        or      c
+        ld      a,c
+        inc     hl
+        ld      b,(hl)
+        or      b
         inc     hl
         or      (hl)
         inc     hl
@@ -158,14 +158,16 @@ gblp:   ld      hl,(dbuff)
         and     a
         ld      hl,(bufsiz)     ; Work out how many bytes read.
         sbc     hl,bc
-        call    cpmwrt          ; Write to the CP/M file.
+        ld      de,(dbuff)      ; Write to the CP/M file.
+        call    cpmwrt
         jr      c,done
         pop     af              ; Last buffer?
         jr      z,gblp
 close:  ld      a,(gbblk)       ; Close the BBC file.
         ld      h,a
         xor     a
-        jp      OSFIND
+        call    OSFIND
+        jr      clscpm          ; Close the CP/M file.
 done:   pop     af
         jr      close
 
