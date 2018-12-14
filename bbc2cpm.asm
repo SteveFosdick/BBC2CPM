@@ -82,7 +82,6 @@ isopen: xor     a               ; Start writing at record zero.
         ld      hl,CCPBASE
         and     a
         sbc     hl,bc
-        ld      (bufsiz),hl
         ld      bc,(ofblk+$0A)  ; and compare with file size to see if the
         sbc     hl,bc           ; file will fit in RAM.
         jp      c,bigfil
@@ -116,11 +115,14 @@ ofail:  ld      de,notfnd
 
         ;; This is the copy strategy when the the file does not fit in buffer.
 
-bigfil: ld      hl,(bufsiz)     ; Get the buffer space again and truncate it
-        ld      a,$80           ; to an integer multiple of the CP/M record
-        and     l               ; size so only the last CP/M record is a
-        ld      l,a             ; partial one and we don't add random junk
-        ld      (bufsiz),hl     ; in the middle of the file.
+bigfil: ld      bc,(dbuff)      ; Get the buffer space again and truncate it
+        ld      hl,CCPBASE      ; to an integer multiple of the CP/M record
+        and     a               ; size so only the last CP/M record is a
+        sbc     hl,bc           ; partial one and we don't add random junk
+        ld      a,$80           ; in the middle of the file.
+        and     l
+        ld      l,a
+        ld      (bufsiz),hl
         ld      a,$40           ; Open the BBC (1st) file for reading
         ld      hl,fndest
         call    OSFIND
