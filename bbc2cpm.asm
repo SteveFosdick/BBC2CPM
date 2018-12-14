@@ -155,8 +155,7 @@ gblp:   ld      hl,(dbuff)
         inc     hl
         or      (hl)
         ld      hl,(bufsiz)     ; Work out how many bytes read.
-        jr      z,last
-        sbc     hl,bc
+        jr      nz,last
         call    cpmwrt          ; Write to the CP/M file.
         jr      nc,gblp
         jr      close
@@ -198,7 +197,7 @@ cpmwrt: xor     a
         adc     a,a             ; then capture carry.
         ld      b,h             ; so B contains a number of 128 byte records
         ld      c,a             ; to write and C is one if another 256 should
-        ld      de,de,(dbuff)   ; be written.
+        ld      de,(dbuff)      ; be written.
 wrloop: push    bc
         push    de
         ld      c,SETDMA        ; Set the "DMA" address, i.e. where the
