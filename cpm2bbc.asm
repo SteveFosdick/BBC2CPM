@@ -183,7 +183,7 @@ data:
 
         ;; Unitialised data section, i.e. workspace.
 
-.segu   "data"
+        .segu   "data"
         .org    data
 dbuff:  dw      0
 maxrec  dw      0        
