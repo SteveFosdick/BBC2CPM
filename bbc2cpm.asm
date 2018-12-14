@@ -101,9 +101,9 @@ obclp:  ld      (hl),a
         call    OSFILE
         or      a
         jr      z,ofail
-        ld      de,(dbuff)      ; Write to CP/M
-        ld      hl,(ofblk+$0A)
-        call    cpmwrt
+        ld      hl,(ofblk+$0A)  ; Round number of records?
+        call    padlst
+round1: call    cpmwrt          ; Write to CP/M.
 clscpm: ld      c,FCLOSE        ; Close the output file
         ld      de,FCB2
         call    BDOS
@@ -154,36 +154,52 @@ gblp:   ld      hl,(dbuff)
         or      (hl)
         inc     hl
         or      (hl)
-        push    af
-        and     a
         ld      hl,(bufsiz)     ; Work out how many bytes read.
+        jr      z,last
         sbc     hl,bc
-        ld      de,(dbuff)      ; Write to the CP/M file.
-        call    cpmwrt
-        jr      c,done
-        pop     af              ; Last buffer?
-        jr      z,gblp
+        call    cpmwrt          ; Write to the CP/M file.
+        jr      nc,gblp
+        jr      close
+last:   sbc     hl,bc
+        call    padlst
+        call    cpmwrt          ; Write to the CP/M file.
 close:  ld      a,(gbblk)       ; Close the BBC file.
         ld      h,a
         xor     a
         call    OSFIND
-        jr      clscpm          ; Close the CP/M file.
-done:   pop     af
-        jr      close
+        jp      clscpm          ; Close the CP/M file.
+
+        ;; Subroutine to pad out the last record of the CP/M file with CP/M
+        ;; EOF characters (^Z).  This also has the effect of ensuring we have
+        ;; an integer number of records to write.  Entered with HL containing
+        ;; the number of bytes in the buffer ready to be written and returns
+        ;; with HL adjusted to a integer multiple of the record size.
+
+padlst: ld      a,$7F           ; Test for integer multiple.
+        and     l
+        ret     z
+        neg
+        add     a,$80
+        ld      b,a
+        ld      a,$1A
+        ld      de,(dbuff)
+        add     hl,de
+padlp:  ld      (hl),a
+        inc     hl
+        djnz    padlp
+        and     a               ; Adjust HL.
+        sbc     hl,de
+        ret
 
         ;; Subroutine to write the buffer to the CP/M file.
 
-cpmwrt: ld      a,l             ; Round number of CP/M records?
-        and     $7F
-        jr      z,round
-        ld      bc,$80          ; Not a round number so write one extra
-        add     hl,bc           ; record for the odd bytes at the end.
-round:  xor     a
+cpmwrt: xor     a
         add     hl,hl           ; multiply by two
         adc     a,a             ; then capture carry.
         ld      b,h             ; so B contains a number of 128 byte records
         ld      c,a             ; to write and C is one if another 256 should
-wrloop: push    bc              ; be written.
+        ld      de,de,(dbuff)   ; be written.
+wrloop: push    bc
         push    de
         ld      c,SETDMA        ; Set the "DMA" address, i.e. where the
         call    BDOS            ; data is to be written from.
