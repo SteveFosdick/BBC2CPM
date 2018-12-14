@@ -71,7 +71,9 @@ found:  ld      c,FDELETE       ; Delete any existing file in the way of
         jp      nz,isopen
         ld      de,ocmsg
         jr      msgout
-isopen: ld      hl,ofblk+$0C    ; Back to the Acorn file, if either of the
+isopen: xor     a               ; Start writing at record zero.
+        ld      (FCB2+$20),a
+        ld      hl,ofblk+$0C    ; Back to the Acorn file, if either of the
         ld      a,(hl)          ; most significant two bytes of the length is
         inc     hl              ; set then this is too big to do in one go.
         or      (hl)
@@ -169,7 +171,7 @@ done:   pop     af
 
 cpmwrt: ld      a,l             ; Round number of CP/M records?
         and     $7F
-        jp      z,round
+        jr      z,round
         ld      bc,$80          ; Not a round number so write one extra
         add     hl,bc           ; record for the odd bytes at the end.
 round:  xor     a
@@ -177,9 +179,7 @@ round:  xor     a
         adc     a,a             ; then capture carry.
         ld      b,h             ; so B contains a number of 128 byte records
         ld      c,a             ; to write and C is one if another 256 should
-        xor     a               ; be written.
-        ld      (FCB2+$20),a
-wrloop: push    bc              ; 
+wrloop: push    bc              ; be written.
         push    de
         ld      c,SETDMA        ; Set the "DMA" address, i.e. where the
         call    BDOS            ; data is to be written from.
