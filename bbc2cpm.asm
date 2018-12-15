@@ -73,20 +73,26 @@ found:  ld      c,FDELETE       ; Delete any existing file in the way of
         jr      msgout
 isopen: xor     a               ; Start writing at record zero.
         ld      (FCB2+$20),a
+        ld      l,a             ; Set LSB of top of memory to zero.
+        ld      a,(BDOS+2)      ; Get MSB of BDOS start.
+        sub     8               ; Drop to below start of CCP.
+        ld      h,a             ; Now HL is top of usable memory.
+        ld      bc,(dbuff)
+        and     a               ; Subtract start of buffer to give the
+        sbc     hl,bc           ; size of the available buffer.
+        ld      (bufsiz),hl
         ld      hl,ofblk+$0C    ; Back to the Acorn file, if either of the
         ld      a,(hl)          ; most significant two bytes of the length is
         inc     hl              ; set then this is too big to do in one go.
         or      (hl)
         jp      nz,bigfil
-        ld      bc,(dbuff)      ; Otherwise find out how much RAM is available
-        ld      hl,CCPBASE
-        and     a
+        ld      bc,(ofblk+$0A)  ; Otherwise compare the file size to the
+        ld      hl,(bufsiz)     ; available memory size to see if the
+        and     a               ; file will fit in RAM.
         sbc     hl,bc
-        ld      bc,(ofblk+$0A)  ; and compare with file size to see if the
-        sbc     hl,bc           ; file will fit in RAM.
         jp      c,bigfil
 
-        ;; This is the copy strategy when the whole files fits in buffer.
+        ;; This is the copy strategy when the whole file fits in buffer.
 
         xor     a               ; Clear everything in the OSFILE control
         ld      b,$10           ; except the filename pointer.
@@ -115,20 +121,17 @@ ofail:  ld      de,notfnd
 
         ;; This is the copy strategy when the the file does not fit in buffer.
 
-bigfil: ld      bc,(dbuff)      ; Get the buffer space again and truncate it
-        ld      hl,CCPBASE      ; to an integer multiple of the CP/M record
-        and     a               ; size so only the last CP/M record is a
-        sbc     hl,bc           ; partial one and we don't add random junk
-        ld      a,$80           ; in the middle of the file.
-        and     l
-        ld      l,a
-        ld      (bufsiz),hl
-        ld      a,$40           ; Open the BBC (1st) file for reading
+bigfil: ld      hl,(bufsiz)     ; Get the buffer size again and truncate it
+        ld      a,$80           ; to an integer multiple of the CP/M record
+        and     l               ; size so only the last CP/M record is a
+        ld      l,a             ; partial one and we don't add random junk
+        ld      a,$40           ; in the middle of the file.
         ld      hl,fndest
-        call    OSFIND
+        call    OSFIND          ; Open the BBC (1st) file for reading
         or      a
         jr      nz,bigfnd
-        ld      de,notfnd
+        call    clscpm          ; Close the CP/M file.
+        ld      de,notfnd       ; Report the not found error.
         jp      msgout
 bigfnd: ld      hl,gbblk        ; Set up the OSGBPB parameter block.
         ld      (hl),a
@@ -144,9 +147,9 @@ gblp:   ld      hl,(dbuff)
         ld      a,$04           ; Read bytes from the file.
         ld      hl,gbblk
         call    OSGBPB
-        ld      hl,gbblk+$05    ; Check if we read a complete buffer full.
-        ld      c,(hl)
-        ld      a,c
+        ld      hl,gbblk+$05    ; Check if we read a complete buffer full
+        ld      c,(hl)          ; and also set BC to the number of bytes
+        ld      a,c             ; not written.
         inc     hl
         ld      b,(hl)
         or      b
@@ -154,12 +157,12 @@ gblp:   ld      hl,(dbuff)
         or      (hl)
         inc     hl
         or      (hl)
-        ld      hl,(bufsiz)     ; Work out how many bytes read.
+        ld      hl,(bufsiz)
         jr      nz,last
         call    cpmwrt          ; Write to the CP/M file.
         jr      nc,gblp
         jr      close
-last:   sbc     hl,bc
+last:   sbc     hl,bc           ; Work out the number of bytes written.
         call    padlst
         call    cpmwrt          ; Write to the CP/M file.
 close:  ld      a,(gbblk)       ; Close the BBC file.
@@ -181,7 +184,7 @@ padlst: ld      a,$7F           ; Test for integer multiple.
         add     a,$80
         ld      b,a
         ld      a,$1A
-        ld      de,(dbuff)
+        ld      de,(dbuff)      ; Find end of data read.
         add     hl,de
 padlp:  ld      (hl),a
         inc     hl

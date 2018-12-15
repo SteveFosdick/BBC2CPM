@@ -7,7 +7,6 @@ BDOS    equ     $0005
 FCB1    equ     $005C
 FCB2    equ     $006C
 CMDTAIL equ     $0080        
-CCPBASE equ     $D400        
 
         ;; BDOS Function Codes
 

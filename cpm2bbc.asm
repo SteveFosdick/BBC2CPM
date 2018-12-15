@@ -61,21 +61,24 @@ endnm2: ld      a,$0D           ; Terminate the filename with CR.
         jr      nz,cpmfnd
         ld      de,cpmnf
         jr      msgout
-cpmfnd: ld      bc,(dbuff)      ; Find out how much RAM is available to
-        ld      hl,CCPBASE      ; use as a buffer.
-        and     a               ; Clear carry flag.
-        sbc     hl,bc
+cpmfnd: ld      a,(BDOS+2)      ; Get MSB of BDOS start.
+        sub     8               ; Drop to below start of CCP.
+        ld      h,a
         xor     a
-        add     hl,hl           ; Multiply by 2
-        adc     a,a             ; then capture carry.
+        ld      l,a             ; Now HL is top of usable memory.
+        ld      bc,(dbuff)
+        and     a               ; Clear carry flag.
+        sbc     hl,bc           ; Subtract buffer start to get available
+        add     hl,hl           ; buffer size then multiply by 2,
+        adc     a,a             ; capture carry.
         ld      b,h             ; so B contains a number of 128 byte CP/M
         ld      c,a             ; records that can be read and C is one if
-        xor     a               ; 256 extra records could be read.
+        xor     a               ; an 256 extra records could be read.
         ld      (maxrec),bc
         call    rdcpm           ; Read CP/M records into buffer.
         jr      z,bigfil        ; No EOF during the read so big file way.
 
-        ;; Copy strategy for a file which fit completely in the buffer.
+        ;; Copy strategy for a file which fits completely in the buffer.
 
         push    de
         xor     a               ; Clear the OSFILE control block
@@ -122,18 +125,19 @@ biglp:  ld      bc,(dbuff)
         call    OSGBPB
         jr      c,bbcwre        ; Write error.
         pop     af
-        jr      nz,done
+        jr      nz,bbclos
         ld      bc,(maxrec)
         call    rdcpm
         push    af
         ld      h,d
         ld      l,e
         jr      biglp
-done:   ld      a,(pbblk)       ; Close the BBC file.
+bbclos: ld      a,(pbblk)       ; Close the BBC file.
         ld      h,a
         xor     a
         jp      OSFIND
-bbcwre: ld      de,bbcwe
+bbcwre: call    bbclos
+        ld      de,bbcwe
         jp      msgout
 
         ;; Subroutine to skip over spaces and TABs in the CP/M command
