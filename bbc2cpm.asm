@@ -125,9 +125,10 @@ bigfil: ld      hl,(bufsiz)     ; Get the buffer size again and truncate it
         ld      a,$80           ; to an integer multiple of the CP/M record
         and     l               ; size so only the last CP/M record is a
         ld      l,a             ; partial one and we don't add random junk
-        ld      a,$40           ; in the middle of the file.
-        ld      hl,fndest
-        call    OSFIND          ; Open the BBC (1st) file for reading
+        ld      (bufsiz),hl     ;  in the middle of the file. 
+        ld      a,$40
+        ld      hl,fndest       ; Open the BBC (1st) file for reading
+        call    OSFIND 
         or      a
         jr      nz,bigfnd
         call    clscpm          ; Close the CP/M file.
