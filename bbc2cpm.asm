@@ -58,7 +58,7 @@ endnam: ld      a,$0D           ; Terminate the filename with CR.
         cp      $02             ; Was a directory found?
         jr      z,gotdir
         ld      de,notfnd
-        jp      msgout
+        jr      msgout
 gotdir: ld      de,dirmsg
         jr      msgout
 found:  ld      c,FDELETE       ; Delete any existing file in the way of
@@ -67,8 +67,8 @@ found:  ld      c,FDELETE       ; Delete any existing file in the way of
         ld      c,FCREATE       ; Create a new output file.
         ld      de,FCB1
         call    BDOS
-        cp      $FF             ; Check if succesful.
-        jp      nz,isopen
+        inc     a               ; Check if succesful.
+        jr      nz,isopen
         ld      de,ocmsg
         jr      msgout
 isopen: xor     a               ; Start writing at record zero.
@@ -85,12 +85,12 @@ isopen: xor     a               ; Start writing at record zero.
         ld      a,(hl)          ; most significant two bytes of the length is
         inc     hl              ; set then this is too big to do in one go.
         or      (hl)
-        jp      nz,bigfil
+        jr      nz,bigfil
         ld      bc,(ofblk+$0A)  ; Otherwise compare the file size to the
         ld      hl,(bufsiz)     ; available memory size to see if the
         and     a               ; file will fit in RAM.
         sbc     hl,bc
-        jp      c,bigfil
+        jr      c,bigfil
 
         ;; This is the copy strategy when the whole file fits in buffer.
 
@@ -113,9 +113,10 @@ round1: call    cpmwrt          ; Write to CP/M.
 clscpm: ld      c,FCLOSE        ; Close the output file
         ld      de,FCB1
         call    BDOS
-        cp      $FF
-        jp      z,wrerr
-        ret
+        inc     a
+        ret     nz
+        ld      de,wrmsg
+        jp      msgout
 ofail:  ld      de,notfnd
         jp      msgout
 
