@@ -6,10 +6,18 @@ BOOT    equ     $0000
 BDOS    equ     $0005
 FCB1    equ     $005C
 FCB2    equ     $006C
-CMDTAIL equ     $0080        
+CMDTAIL equ     $0080
+
+FCB1DN  equ     FCB1
+FCB1FN  equ     FCB1+$01
+FCB1FT  equ     FCB1+$09
+FCB1EX  equ     FCB1+$0C
+FCB1RC  equ     FCB1+$0F        
+FCB1CR  equ     FCB1+$20
 
         ;; BDOS Function Codes
 
+CONOUT  equ     02h
 PRSTR   equ     09h
 FOPEN   equ     0fh        
 FCLOSE  equ     10h        
