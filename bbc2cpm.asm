@@ -21,12 +21,12 @@
         ld      a,(FCB2+$01)    ; Check if second filename present.
         cp      b
         jr      z,usage
-        ld      bc,16           ; Move the 2nd FCB down over the 1st.  We
-        ld      de,FCB1         ; cannot use the ready-parsed FCB1 anyway as
-        ld      hl,FCB2         ; Acorn filenames do not use CP/M conventions.
-        ldir
-        ld      hl,CMDTAIL      ; Go back to the command line and get the
-        ld      b,(hl)          ; length.
+        ld      bc,16           ; Move the 2nd FCB down over the 1st so when
+        ld      de,FCB1         ; we open it we do don't clobber the command
+        ld      hl,FCB2         ; line tail.  We cannot use the ready-parsed
+        ldir                    ; FCB1 anyway as Acorn filenames don't use
+        ld      hl,CMDTAIL      ; CP/M conventions.
+        ld      b,(hl)          ; Get back the command line tail length.
 spclp:  inc     hl              ; Skip any initial spaces.
         ld      a,(hl)
         cp      ' '
@@ -53,14 +53,8 @@ endnam: ld      a,$0D           ; Terminate the filename with CR.
         ld      hl,ofblk        ; Issue an OSFILE call for that filename to
         ld      a,$05           ; find how big the corresponding file is.
         call    OSFILE
-        cp      $01             ; Was a file found?
-        jr      z,found
-        cp      $02             ; Was a directory found?
-        jr      z,gotdir
-        ld      de,notfnd
-        jr      msgout
-gotdir: ld      de,dirmsg
-        jr      msgout
+        dec     a               ; Was a file found?
+        jp      nz,bbcbad
 found:  ld      c,FDELETE       ; Delete any existing file in the way of
         ld      de,FCB1         ; the output file.
         call    BDOS
@@ -68,10 +62,8 @@ found:  ld      c,FDELETE       ; Delete any existing file in the way of
         ld      de,FCB1
         call    BDOS
         inc     a               ; Check if succesful.
-        jr      nz,isopen
-        ld      de,ocmsg
-        jr      msgout
-isopen: xor     a               ; Start writing at record zero.
+        jr      z,cpmfnf
+        xor     a               ; Start writing at record zero.
         ld      (FCB1EX),a
         ld      (FCB1CR),a
         ld      l,a             ; Set LSB of top of memory to zero.
@@ -115,10 +107,23 @@ clscpm: ld      c,FCLOSE        ; Close the output file
         call    BDOS
         inc     a
         ret     nz
-        ld      de,wrmsg
-        jp      msgout
+wrerr1: ld      de,wrmsg
+        call    msgout
+        ld      hl,FCB1
+        call    prfcb
+newlin: ld      c,CONOUT
+        ld      e,$0D
+        call    BDOS
+        ld      c,CONOUT
+        ld      e,$0A
+        jp      BDOS
 ofail:  ld      de,notfnd
         jp      msgout
+cpmfnf: ld      de,cpmnf
+        call    msgout
+        ld      hl,FCB1
+        call    prfcb
+        jr      newlin
 
         ;; This is the copy strategy when the the file does not fit in buffer.
 
@@ -230,13 +235,69 @@ wrerr:  ld      de,wrmsg
         scf                     ; set carry to indicate failure.
         ret
 
+bbcbad: dec     a               ; Was a directory found?
+        jr      z,gotdir
+notfnd: ld      de,notfn1
+        call    msgout
+        call    bbcfno
+        ld      de,notfn2
+        jp      msgout
+gotdir: ld      de,dirms1
+        call    msgout
+        call    bbcfno
+        ld      de,dirms2
+        jp      msgout
+bbcfno: ld      hl,(ofblk)
+bbcfnl: ld      a,(hl)
+        cp      $0D
+        ret     z
+        inc     hl
+        push    hl
+        ld      c,CONOUT
+        ld      e,a
+        call    BDOS
+        pop     hl
+        jr      bbcfnl
+
+prfcb:  inc     hl
+        push    hl
+        ld      b,8
+        call    prfcb1
+        pop     hl
+        ld      de,8
+        add     hl,de
+        ld      a,(hl)
+        cp      ' '
+        ret     z
+        push    hl
+        ld      e,'.'
+        ld      c,CONOUT
+        call    BDOS
+        pop     hl
+        ld      b,3
+prfcb1: ld      a,(hl)
+        cp      ' '
+        ret     z
+        inc     hl
+        push    bc
+        push    hl
+        ld      c,CONOUT
+        ld      e,a
+        call    BDOS
+        pop     hl
+        pop     bc
+        djnz    prfcb1
+        ret
+        
         ;; Messages
 
-notfnd: db      "Acorn input file not found",$0D,$0A,'$'
-wrmsg   db      "Error writing to CP/M output file",$0D,$0A,'$'  
-ustr:   db      "Usage: dfs2cpm <dfs-file> <cpm-file>",$0D,$0A,'$'
-dirmsg  db      "Unable to copy a directory",$0D,$0A,'$'
-ocmsg:  db      "Unable to create CP/M output file",$0D,$0A,'$'
+notfn1: db      "Acorn input file $"
+notfn2: db      " not found",$0D,$0A,'$'
+dirms1: db      "Unable to copy $"
+dirms2: db      " as it is a directory",$0D,$0A,'$'
+wrmsg:  db      "Error writing to CP/M output file $"
+cpmnf:  db      "Unable to create CP/M output file $"
+ustr:   db      "Usage: bbc2cpm <bbc-file> <cpm-file>",$0D,$0A,'$'
 data:
 
         ;; Unitialised data section, i.e. workspace.
