@@ -14,16 +14,21 @@
 
         ;; Parse the command line.
 
-        ld      hl,CMDTAIL      ; Get the length of the command line tail.
+        ld      a,(FCB1FN)      ; Check if first filename present.
+        ld      b,' '
+        cp      b
+        jr      z,usage
+        ld      a,(FCB2+$01)    ; Check if second filename present.
+        cp      b
+        jr      z,usage
+        ld      bc,16           ; Move the 2nd FCB down over the 1st.  We
+        ld      de,FCB1         ; cannot use the ready-parsed FCB1 anyway as
+        ld      hl,FCB2         ; Acorn filenames do not use CP/M conventions.
+        ldir
+        ld      hl,CMDTAIL      ; Go back to the command line and get the
+        ld      b,(hl)          ; length.
+spclp:  inc     hl              ; Skip any initial spaces.
         ld      a,(hl)
-        or      a               ; Is the command line empy?
-        jr      z,usage
-        ld      b,a             ; Save the lenth for later.
-        ld      a,(FCB2+$01)    ; Look for a ready-parsed 2nd filename.  A
-        cp      ' '             ; space means no 2nd filename given.
-        jr      z,usage
-spclp:  inc     hl              ; Back to the command line tail, skip any
-        ld      a,(hl)          ; initial spaces.
         cp      ' '
         jr      z,isspc
         cp      $09
@@ -32,21 +37,16 @@ isspc:  djnz    spclp           ; If we get to the end of the command line the
 usage:  ld      de,ustr         ; 1st filename must be missing.
 msgout: ld      c,PRSTR
         jp      BDOS
-notspc: ld      de,fndest       ; Copy filename of the 1st file to immediately
-        ld      (ofblk),de      ; after the program code as CP/M will clobber
-nsplp:  ld      a,(hl)          ; it if left at 0080h
-        cp      ' '
-        jp      z,endnam
+notspc: ld      (ofblk),hl      ; Save start address of filename in OSFILE
+nsplp:  ld      a,(hl)          ; control block then find the end of the
+        cp      ' '             ; filename, i.e. the next space or tab.
+        jr      z,endnam
         cp      $09
-        jp      z,endnam
-        ld      (de),a
+        jr      z,endnam
         inc     hl
-        inc     de
         djnz    nsplp
 endnam: ld      a,$0D           ; Terminate the filename with CR.
-        ld      (de),a
-        inc     de              ; Save end of filename address as start of
-        ld      (dbuff),de      ; data buffer.
+        ld      (hl),a
 
         ;; Check if the source (BBC) file fits in the available buffer.
 
@@ -62,24 +62,24 @@ endnam: ld      a,$0D           ; Terminate the filename with CR.
 gotdir: ld      de,dirmsg
         jr      msgout
 found:  ld      c,FDELETE       ; Delete any existing file in the way of
-        ld      de,FCB2         ; the output file.
+        ld      de,FCB1         ; the output file.
         call    BDOS
         ld      c,FCREATE       ; Create a new output file.
-        ld      de,FCB2
+        ld      de,FCB1
         call    BDOS
         cp      $FF             ; Check if succesful.
         jp      nz,isopen
         ld      de,ocmsg
         jr      msgout
 isopen: xor     a               ; Start writing at record zero.
-        ld      (FCB2+$20),a
+        ld      (FCB1EX),a
+        ld      (FCB1CR),a
         ld      l,a             ; Set LSB of top of memory to zero.
         ld      a,(BDOS+2)      ; Get MSB of BDOS start.
         sub     8               ; Drop to below start of CCP.
         ld      h,a             ; Now HL is top of usable memory.
-        ld      bc,(dbuff)
-        and     a               ; Subtract start of buffer to give the
-        sbc     hl,bc           ; size of the available buffer.
+        ld      bc,-dbuff       ; Subtract start of buffer to give the
+        add     hl,bc           ; size of the available buffer.
         ld      (bufsiz),hl
         ld      hl,ofblk+$0C    ; Back to the Acorn file, if either of the
         ld      a,(hl)          ; most significant two bytes of the length is
@@ -100,7 +100,7 @@ isopen: xor     a               ; Start writing at record zero.
 obclp:  ld      (hl),a
         inc     hl
         djnz    obclp
-        ld      hl,(dbuff)      ; Set up the load address in the OSFILE block
+        ld      hl,dbuff        ; Set up the load address in the OSFILE block
         ld      (ofblk+$02),hl  ; at the end of this program then issue the
         ld      a,$FF           ; the call to load the file.
         ld      hl,ofblk
@@ -111,7 +111,7 @@ obclp:  ld      (hl),a
         call    padlst
 round1: call    cpmwrt          ; Write to CP/M.
 clscpm: ld      c,FCLOSE        ; Close the output file
-        ld      de,FCB2
+        ld      de,FCB1
         call    BDOS
         cp      $FF
         jp      z,wrerr
@@ -127,23 +127,23 @@ bigfil: ld      hl,(bufsiz)     ; Get the buffer size again and truncate it
         ld      l,a             ; partial one and we don't add random junk
         ld      (bufsiz),hl     ;  in the middle of the file. 
         ld      a,$40
-        ld      hl,fndest       ; Open the BBC (1st) file for reading
+        ld      hl,(ofblk)      ; Open the BBC (1st) file for reading
         call    OSFIND 
         or      a
         jr      nz,bigfnd
         call    clscpm          ; Close the CP/M file.
         ld      de,notfnd       ; Report the not found error.
         jp      msgout
-bigfnd: ld      hl,gbblk        ; Set up the OSGBPB parameter block.
+bigfnd: ld      hl,gbblk        ; Store the handle in the OSGBPB block.
         ld      (hl),a
-        xor     a
+        xor     a               ; Clear the rest of the  OSGBPB block.
         ld      b,$0C
 clrlp:  inc     hl
         ld      (hl),a
         djnz    clrlp
-gblp:   ld      hl,(dbuff)
+gblp:   ld      hl,dbuff        ; Set destination address.
         ld      (gbblk+$01),hl
-        ld      hl,(bufsiz)
+        ld      hl,(bufsiz)     ; Set size to read.
         ld      (gbblk+$05),hl
         ld      a,$04           ; Read bytes from the file.
         ld      hl,gbblk
@@ -185,7 +185,7 @@ padlst: ld      a,$7F           ; Test for integer multiple.
         add     a,$80
         ld      b,a
         ld      a,$1A
-        ld      de,(dbuff)      ; Find end of data read.
+        ld      de,dbuff        ; Find end of data read.
         add     hl,de
 padlp:  ld      (hl),a
         inc     hl
@@ -201,13 +201,13 @@ cpmwrt: xor     a
         adc     a,a             ; then capture carry.
         ld      b,h             ; so B contains a number of 128 byte records
         ld      c,a             ; to write and C is one if another 256 should
-        ld      de,(dbuff)      ; be written.
+        ld      de,dbuff        ; be written.
 wrloop: push    bc
         push    de
         ld      c,SETDMA        ; Set the "DMA" address, i.e. where the
         call    BDOS            ; data is to be written from.
         ld      c,FWRITSQ       ; Write the record.
-        ld      de,FCB2
+        ld      de,FCB1
         call    BDOS
         or      a               ; Successful
         jr      nz,wrerr
@@ -242,8 +242,7 @@ data:
 
         .segu   "data"
         .org    data
-dbuff:  dw      0
 bufsiz  dw      0        
 ofblk   ds      18
 gbblk   equ     ofblk+2        
-fndest: 
+dbuff:
