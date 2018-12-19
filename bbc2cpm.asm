@@ -259,36 +259,8 @@ bbcfnl: ld      a,(hl)
         pop     hl
         jr      bbcfnl
 
-prfcb:  inc     hl
-        push    hl
-        ld      b,8
-        call    prfcb1
-        pop     hl
-        ld      de,8
-        add     hl,de
-        ld      a,(hl)
-        cp      ' '
-        ret     z
-        push    hl
-        ld      e,'.'
-        ld      c,CONOUT
-        call    BDOS
-        pop     hl
-        ld      b,3
-prfcb1: ld      a,(hl)
-        cp      ' '
-        ret     z
-        inc     hl
-        push    bc
-        push    hl
-        ld      c,CONOUT
-        ld      e,a
-        call    BDOS
-        pop     hl
-        pop     bc
-        djnz    prfcb1
-        ret
-        
+        .include "prfcb.asm"
+
         ;; Messages
 
 notfn1: db      "Acorn input file $"
