@@ -83,11 +83,8 @@ bigfil: push    af
         ld      hl,(ofblk)
         call    OSFIND
         or      a
-        jr      nz,bbcfnd
-        pop     de
-        ld      de,bbcnf
-        jp      msgout
-bbcfnd: ld      hl,pbblk        ; Store the file hand in the  OSGBPB block.
+        jp      z,bbcnfd
+bbcfnd: ld      hl,pbblk        ; Store the file handle in the  OSGBPB block.
         ld      (hl),a
         xor     a               ; Clear the rest of the block.
         ld      b,$0C
@@ -118,14 +115,42 @@ bbclos: ld      a,(pbblk)       ; Close the BBC file.
         jp      OSFIND
 bbcwre: call    bbclos
         ld      de,bbcwe
-        jr      msgout
+        jp      bbcerr
 
 usage:  ld      de,ustr
 msgout: ld      c,PRSTR
         jp      BDOS
 
-cpmbad: ld      de,cpmnf
-        jr      msgout
+cpmbad: ld      de,cpmnf1
+        call    msgout
+        ld      hl,FCB1
+        call    prfcb
+        ld      de,cpmnf2
+        jp      msgout
+
+        ;; Error messages that involve printing the BBC filename
+        ;; followed by a newline.
+
+bbcnfd: pop     de
+        ld      de,bbcnf
+bbcerr: call    msgout
+        ld      hl,(ofblk)
+bbcfnl: ld      a,(hl)
+        cp      $0D
+        jr      z,newlin
+        inc     hl
+        push    hl
+        ld      c,CONOUT
+        ld      e,a
+        call    BDOS
+        pop     hl
+        jr      bbcfnl
+newlin: ld      c,CONOUT
+        ld      e,$0D
+        call    BDOS
+        ld      c,CONOUT
+        ld      e,$0A
+        jp      BDOS
 
         ;; Subroutine to skip over spaces and TABs in the CP/M command
         ;; line where the number of characters remaining is in B.  If
@@ -187,11 +212,14 @@ cpeof:  pop     de
         pop     bc
         ret
 
+        .include "prfcb.asm"
+
         ;; Messages.
 
 ustr:   db      "Usage: cpm2bbc <cpm-file> <bbc-file>",$0D,$0A,'$'
-cpmnf   db      "CP/M file not found",$0D,$0A,'$'
-bbcnf   db      "Error creating BBC file",$0D,$0A,'$'
+cpmnf1: db      "CP/M file $"
+cpmnf2: db      " not found",$0D,$0A,'$'
+bbcnf   db      "Error creating BBC file $"
 bbcwe   db      "Write error on BBC file",$0D,$0A,'$'
 data:
 
