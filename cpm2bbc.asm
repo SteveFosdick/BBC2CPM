@@ -17,58 +17,38 @@
         ld      hl,CMDTAIL      ; Get the length of the command line tail.
         ld      a,(hl)
         or      a               ; Is the command line empy?
-        jr      z,usage
+        jp      z,usage
         ld      b,a             ; Save the lenth for later.
-        ld      a,(FCB2+$01)    ; Look for a ready-parsed 1st filename.  A
+        ld      a,(FCB1FN)      ; Look for a ready-parsed 1st filename.  A
         cp      ' '             ; space means no 1st filename given.
-        jr      z,usage
+        jp      z,usage
         call    skpspc          ; Skip initial spaces.
-fnlp1:  ld      a,(hl)          ; Skip over the 1st filename.
-        cp      ' '
-        jr      z,endnm1
-        cp      $09
-        jr      z,endnm1
-        inc     hl
-        djnz    fnlp1           ; If B=0, 2nd filename is missing.
-usage:  ld      de,ustr
-msgout: ld      c,PRSTR
-        jp      BDOS
-endnm1: call    skpspc          ; Skip spaces between filenames.
-notspc: ld      de,fndest       ; Copy filename of the 2nd file to immediately
-        ld      (ofblk),de      ; after the program code as CP/M will clobber
-fnlp2:  ld      a,(hl)          ; it if left at 0080h
-        cp      ' '
-        jr      z,endnm2
-        cp      $09
-        jr      z,endnm2
-        ld      (de),a
-        inc     hl
-        inc     de
-        djnz    fnlp2
-endnm2: ld      a,$0D           ; Terminate the filename with CR.
-        ld      (de),a
-        inc     de              ; Save end of filename address as start of
-        ld      (dbuff),de      ; data buffer.
+        call    skpnsp          ; Skip over the 1st filename.
+        jp      nz,usage
+        dec     b
+        call    skpspc          ; Skip spaces between filenames.
+        ld      (ofblk),hl
+        call    skpnsp          ; Skip to the end of the BBC filename
+        ld      a,$0D           ; and terminate it with CR.
+        ld      (hl),a
 
         ;; Read the first buffer full from the source file.
 
         xor     a               ; Open the CP/M (1st) file with the current
-        ld      (FCB1+$20),a    ; record number set to zero.
+        ld      (FCB1EX),a      ; record number set to zero.
+        ld      (FCB1CR),a
         ld      c,FOPEN
         ld      de,FCB1
         call    BDOS
-        cp      $FF
-        jr      nz,cpmfnd
-        ld      de,cpmnf
-        jr      msgout
+        inc     a
+        jp      z,cpmbad
 cpmfnd: ld      a,(BDOS+2)      ; Get MSB of BDOS start.
         sub     8               ; Drop to below start of CCP.
         ld      h,a
         xor     a
         ld      l,a             ; Now HL is top of usable memory.
-        ld      bc,(dbuff)
-        and     a               ; Clear carry flag.
-        sbc     hl,bc           ; Subtract buffer start to get available
+        ld      bc,-dbuff
+        add     hl,bc           ; Subtract buffer start to get available
         add     hl,hl           ; buffer size then multiply by 2,
         adc     a,a             ; capture carry.
         ld      b,h             ; so B contains a number of 128 byte CP/M
@@ -87,7 +67,7 @@ cpmfnd: ld      a,(BDOS+2)      ; Get MSB of BDOS start.
 clrlp1: ld      (hl),a
         inc     hl
         djnz    clrlp1
-        ld      hl,(dbuff)      ; Set up the addresses in the control
+        ld      hl,dbuff        ; Set up the addresses in the control
         ld      (ofblk+$0A),hl  ; block.
         pop     de
         ld      (ofblk+$0E),de
@@ -100,27 +80,27 @@ clrlp1: ld      (hl),a
 bigfil: push    af
         push    de
         ld      a,$80           ; Open the BBC (2nd) file for writing.
-        ld      hl,fndest
+        ld      hl,(ofblk)
         call    OSFIND
         or      a
         jr      nz,bbcfnd
         pop     de
         ld      de,bbcnf
         jp      msgout
-bbcfnd: ld      hl,pbblk        ; Set up the OSGBPB parameter block.
+bbcfnd: ld      hl,pbblk        ; Store the file hand in the  OSGBPB block.
         ld      (hl),a
-        xor     a
+        xor     a               ; Clear the rest of the block.
         ld      b,$0C
 clrlp2: inc     hl
         ld      (hl),a
         djnz    clrlp2
         pop     hl              ; Get back last address written.
-biglp:  ld      bc,(dbuff)
+biglp:  ld      bc,dbuff
         and     a
         sbc     hl,bc           ; Calculate the length.
         ld      (pbblk+$01),bc
         ld      (pbblk+$05),hl
-        ld      a,$02
+        ld      a,$02           ; Write to the BBC file.
         ld      hl,pbblk
         call    OSGBPB
         jr      c,bbcwre        ; Write error.
@@ -138,7 +118,14 @@ bbclos: ld      a,(pbblk)       ; Close the BBC file.
         jp      OSFIND
 bbcwre: call    bbclos
         ld      de,bbcwe
-        jp      msgout
+        jr      msgout
+
+usage:  ld      de,ustr
+msgout: ld      c,PRSTR
+        jp      BDOS
+
+cpmbad: ld      de,cpmnf
+        jr      msgout
 
         ;; Subroutine to skip over spaces and TABs in the CP/M command
         ;; line where the number of characters remaining is in B.  If
@@ -154,12 +141,27 @@ skpspc: inc     hl
 isspc:  djnz    skpspc
         ret
 
+        ;; Subroutine to skip over non-space, non-TAB characters in the CP/M
+        ;; command line where the number of characters remaining is in B.  If
+        ;; no space characters were found before the end of the line the Z
+        ;; flag is set, otherwise clear.
+
+skpnsp: ld      a,(hl)
+        cp      ' '
+        ret     z
+        cp      $09
+        ret     z
+        inc     hl
+        djnz    skpnsp
+        inc     b
+        ret
+
         ;; Subroutine to read records from the CP/M file into the memory
         ;; buffer.  On entry, BC contains the maximum number of records to
         ;; read but with the two halves the opposite way round to normal,
         ;; i.e. B is LSB and C is MSB (but C may only be 0 or 1)
 
-rdcpm:  ld      de,(dbuff)
+rdcpm:  ld      de,dbuff
 rdloop: push    bc
         push    de
         ld      c,SETDMA        ; Set the "DMA" address, i.e. where the
@@ -197,8 +199,7 @@ data:
 
         .segu   "data"
         .org    data
-dbuff:  dw      0
 maxrec  dw      0        
 ofblk   ds      18
 pbblk   equ     ofblk+2
-fndest: 
+dbuff:
