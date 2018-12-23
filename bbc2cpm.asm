@@ -14,43 +14,43 @@
 
         ;; Parse the command line.
 
-        ld      a,(FCB1FN)      ; Check if first filename present.
-        ld      b,' '
-        cp      b
-        jr      z,usage
-        ld      a,(FCB2+$01)    ; Check if second filename present.
-        cp      b
-        jr      z,usage
-        ld      bc,16           ; Move the 2nd FCB down over the 1st so when
-        ld      de,FCB1         ; we open it we do don't clobber the command
-        ld      hl,FCB2         ; line tail.  We cannot use the ready-parsed
-        ldir                    ; FCB1 anyway as Acorn filenames don't use
-        ld      hl,CMDTAIL      ; CP/M conventions.
-        ld      b,(hl)          ; Get back the command line tail length.
-spclp:  inc     hl              ; Skip any initial spaces.
+        ld      hl,CMDTAIL      ; Get the command line tail length.
         ld      a,(hl)
-        cp      ' '
-        jr      z,isspc
-        cp      $09
-        jr      nz,notspc
-isspc:  djnz    spclp           ; If we get to the end of the command line the
-usage:  ld      de,ustr         ; 1st filename must be missing.
+        or      a               ; Check for empty command line.
+        jr      z,usage
+        inc     a               ; Go to the end of the command line.
+        add     a,l
+        ld      l,a
+noinc:  ld      (hl),$0D        ; and terminate with CR.
+        ld      de,CMDTAIL+1
+        call    SkipSpace       ; Skip any initial spaces.
+        cp      $0D             ; end of line with no filename?
+        jr      z,usage
+notspc: ld      (ofblk),de      ; Save start address of filename in OSFILE
+nsplp:  ld      a,(de)          ; control block then find the end of the
+        cp      ' '             ; filename, i.e. the next space.
+        jr      z,endnam
+        inc     de
+        cp      $0D
+        jr      nz,nsplp
+usage:  ld      de,ustr
 msgout: ld      c,PRSTR
         jp      BDOS
-notspc: ld      (ofblk),hl      ; Save start address of filename in OSFILE
-nsplp:  ld      a,(hl)          ; control block then find the end of the
-        cp      ' '             ; filename, i.e. the next space or tab.
-        jr      z,endnam
-        cp      $09
-        jr      z,endnam
-        inc     hl
-        djnz    nsplp
+badfn:  ld      de,badmsg
+        jr      msgout
 endnam: ld      a,$0D           ; Terminate the filename with CR.
-        ld      (hl),a
+        ld      (de),a
+        inc     de
+        call    SkipSpace
+        call    ScanFnFCB1      ; Scan CP/M filename into FCB
+        jr      nz,badfn
+        ld      a,(FCB1FN)      ; Check for empty filename.
+        cp      ' '
+        jr      z,badfn
 
         ;; Check if the source (BBC) file fits in the available buffer.
 
-        ld      hl,ofblk        ; Issue an OSFILE call for that filename to
+chkbbc: ld      hl,ofblk        ; Issue an OSFILE call for that filename to
         ld      a,$05           ; find how big the corresponding file is.
         call    OSFILE
         dec     a               ; Was a file found?
@@ -259,6 +259,21 @@ bbcfnl: ld      a,(hl)
         pop     hl
         jr      bbcfnl
 
+        ;; Subroutine to skip over spaces and TABs in the CP/M command
+        ;; line where the number of characters remaining is in B.  If
+        ;; no non-space characters were found before the end of the line
+        ;; the Z flag is set, otherwise clear.
+
+skpspc: inc     hl
+        ld      a,(hl)
+        cp      ' '
+        jp      z,isspc
+        cp      $09
+        ret     nz
+isspc:  djnz    skpspc
+        ret
+
+        .include "ScanFilename.asm"
         .include "prfcb.asm"
 
         ;; Messages
@@ -270,6 +285,7 @@ dirms2: db      " as it is a directory",$0D,$0A,'$'
 wrmsg:  db      "Error writing to CP/M output file $"
 cpmnf:  db      "Unable to create CP/M output file $"
 ustr:   db      "Usage: bbc2cpm <bbc-file> <cpm-file>",$0D,$0A,'$'
+badmsg  db      "Invalid CP/M filename",$0D,$0A,'$'
 data:
 
         ;; Unitialised data section, i.e. workspace.
